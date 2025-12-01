@@ -1,6 +1,11 @@
 # GPU-Accelerated Single Source Shortest Path (SSSP) Algorithms
 
+## URL
+
+The project could be found at [https://github.com/Erice1221/GPU-Accelerated-SSSP-Algorithms](https://github.com/Erice1221/GPU-Accelerated-SSSP-Algorithms)
+
 ## Summary
+
 We aim to implement and benchmark GPU-accelerated versions of Single Source Shortest Path (SSSP) algorithms, specifically delta-stepping and parallel Bellman-Ford. The project will focus on optimizing these algorithms for GPU architectures to enhance performance on large-scale graphs. Additionally, we will explore connections and compare our implementations with the latest SSSP algorithms proposed in recent literature.
 
 ## Background
@@ -114,14 +119,6 @@ Eric:
 - Finalize parallel Bellman-Ford implementation and optimizations.
 - Conduct comprehensive benchmarking against baseline Dijkstra's implementation.
 - Analyze performance results and identify bottlenecks.
-
-## Progress (Dec 1): 
-
-- Both delta-stepping and parallel Bellman-Ford algorithms have been implemented on GPU using CUDA.
-- Basic correctness has been verified on small-scale manual graphs.
-- Benchmarking framework has been established, and preliminary benchmarks have been run on small to medium-sized graphs from public datasets.
-    - Currently, the delta-stepping implementation is working, but further optimizations are needed to improve performance, as only on sparse graphs does it outperform the single-threaded Dijkstra's implementation.
-- Both team members are working on optimizing their respective implementations and preparing for comprehensive benchmarking and analysis.
 
 ## References
 
