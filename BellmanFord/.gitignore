@@ -1,0 +1,4 @@
+graphs/*.txt
+parallel
+sequential
+test_results.txt
