@@ -126,11 +126,19 @@ Eric:
 ## References
 
 [1] R. Duan, J. Mao, X. Mao, X. Shu, and L. Yin, “Breaking the Sorting Barrier for Directed Single-Source Shortest Paths,” arXiv preprint arXiv:2504.17033, 2025.
+
 [2] U. Meyer and P. Sanders, “Δ-stepping: a parallelizable shortest path algorithm,” Journal of Algorithms, vol. 49, no. 1, pp. 114–152, 2003, doi: https://doi.org/10.1016/S0196-6774(03)00076-2.
+
 [3] K. Wang, D. Fussell, and C. Lin, “A fast work-efficient sssp algorithm for gpus,” in Proceedings of the 26th ACM SIGPLAN Symposium on Principles and Practice of Parallel Programming, 2021, pp. 133–146.
+
 [4] A. Davidson, S. Baxter, M. Garland, and J. D. Owens, “Work-Efficient Parallel GPU Methods for Single-Source Shortest Paths,” in 2014 IEEE 28th International Parallel and Distributed Processing Symposium, 2014, pp. 349–359. doi: 10.1109/IPDPS.2014.45.
+
 [5] P. Agarwal and M. Dutta, “New approach of Bellman Ford algorithm on GPU using compute unified design architecture (CUDA),” International Journal of Computer Applications, vol. 110, no. 13, 2015.
+
 [6] G. Hajela and M. Pandey, “Parallel implementations for solving shortest path problem using Bellman-Ford,” International Journal of Computer Applications, vol. 95, no. 15, pp. 1–6, 2014.
+
 [7] S. Kumar, A. Misra, and R. S. Tomar, “A modified parallel approach to Single Source Shortest Path Problem for massively dense graphs using CUDA,” in 2011 2nd International Conference on Computer and Communication Technology (ICCCT-2011), 2011, pp. 635–639. doi: 10.1109/ICCCT.2011.6075214.
+
 [8] “Stanford Large Network Dataset Collection.” Accessed: Nov. 17, 2025. [Online]. Available: https://snap.stanford.edu/data/
+
 [9] “9th DIMACS Implementation Challenge: Shortest Paths.” Accessed: Nov. 17, 2025. [Online]. Available: https://www.diag.uniroma1.it/challenge9/download.shtml
