@@ -121,6 +121,7 @@ Eric:
 - Basic correctness has been verified on small-scale manual graphs.
 - Benchmarking framework has been established, and preliminary benchmarks have been run on small to medium-sized graphs from public datasets.
     - Currently, the delta-stepping implementation is working, but further optimizations are needed to improve performance, as only on sparse graphs does it outperform the single-threaded Dijkstra's implementation.
+    - The parallel Bellman Ford implementation is working and seems to pass all correctness tests, but changes can be made to create a more optimal solution. Significantly better perfomance for large graphs compared to the CPU sequential version. Smaller graphs struggle. More testing and anylsis is also required. 
 - Both team members are working on optimizing their respective implementations and preparing for comprehensive benchmarking and analysis.
 
 ## References
@@ -142,3 +143,4 @@ Eric:
 [8] “Stanford Large Network Dataset Collection.” Accessed: Nov. 17, 2025. [Online]. Available: https://snap.stanford.edu/data/
 
 [9] “9th DIMACS Implementation Challenge: Shortest Paths.” Accessed: Nov. 17, 2025. [Online]. Available: https://www.diag.uniroma1.it/challenge9/download.shtml
+
