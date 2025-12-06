@@ -19,13 +19,35 @@
 #define INF 1e30f
 #define BLOCK_SIZE 256
 
+/**
+ * @brief Helper function to check for CUDA errors.
+ * @param err The CUDA error code.
+ * @param msg The message to display on error.
+ */
+#define check_cuda(ans, msg) { gpuAssert((ans), __FILE__, __LINE__, msg); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, const char *msg) {
+    if (code != cudaSuccess) {
+        std::cerr << "CUDA Error: " << msg << " " 
+                  << cudaGetErrorString(code) << " " << file << " " << line << std::endl;
+        exit(1);
+    }
+}
+
+/**
+ * @brief Atomic minimum operation for floats.
+ * @param address The address of the float to update.
+ * @param val The value to compare and set.
+ * @return The old value at the address.
+ */
 static __device__ inline float atomicMinFloat(float* address, float val) {
     int* address_as_i = reinterpret_cast<int*>(address);
     int old = *address_as_i, assumed;
     do {
         assumed = old;
         float old_f = __int_as_float(assumed);
-        if (old_f <= val) break;
+        // If existing value is already smaller/equal, no need to update
+        if (old_f <= val) return old_f;
+        
         int new_i = __float_as_int(val);
         old = atomicCAS(address_as_i, assumed, new_i);
     } while (assumed != old);
@@ -45,12 +67,17 @@ __global__ void init_buffers(float* dist, int n, int source) {
 
 /**
  * @brief Relax Kernel.
- * * Reads nodes from in_queue.
- * Scans neighbors.
- * Updates distance using atomicMin.
- * If updated:
- * - If edge_weight <= delta (Light): Add to next_near_queue
- * - If edge_weight >  delta (Heavy): Add to next_far_queue
+ * @param g The device graph.
+ * @param dist The distance array.
+ * @param in_queue The current queue of nodes to process.
+ * @param in_queue_size The size of the current queue.
+ * @param delta The delta parameter.
+ * @param next_near_queue The next near queue to populate.
+ * @param next_near_count Pointer to the near queue size counter.
+ * @param next_far_queue The next far queue to populate.
+ * @param next_far_count Pointer to the far queue size counter.
+ * @param in_next_near_map Deduplication array for near queue.
+ * @param in_next_far_map Deduplication array for far queue.
  */
 __global__ void relax_kernel(
     const Graph::DeviceGraph g, 
@@ -61,56 +88,54 @@ __global__ void relax_kernel(
     int* next_near_queue, 
     int* next_near_count,
     int* next_far_queue,
-    int* next_far_count
+    int* next_far_count,
+    int* in_next_near_map, // Bitmask/Map for near queue
+    int* in_next_far_map   // Bitmask/Map for far queue
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid >= in_queue_size) return;
+    
+    if (tid < in_queue_size) {
+        int u = in_queue[tid];
+        float d_u = dist[u];
 
-    int u = in_queue[tid];
-    float d_u = dist[u];
+        // Sanity check
+        if (d_u < INF) {
+            int start = g.d_row_offsets[u];
+            int end = g.d_row_offsets[u + 1];
 
-    // Early exit if this path is already stale (optional optimization)
-    if (d_u >= INF) return;
+            for (int i = start; i < end; ++i) {
+                int v = g.d_col_indices[i];
+                float w = g.d_edge_weights[i];
+                float new_dist = d_u + w;
 
-    int start = g.d_row_offsets[u];
-    int end = g.d_row_offsets[u + 1];
-
-    for (int i = start; i < end; ++i) {
-        int v = g.d_col_indices[i];
-        float w = g.d_edge_weights[i];
-        
-        float new_dist = d_u + w;
-        
-        // Speculative check to avoid expensive atomics
-        if (new_dist < dist[v]) {
-            float old_dist = atomicMinFloat(&dist[v], new_dist);
-            
-            // If we successfully improved the distance
-            if (new_dist < old_dist) {
-                // Determine which queue to add to
-                if (w <= delta) {
-                    // Light edge -> Add to next Near frontier
-                    int pos = atomicAdd(next_near_count, 1);
-                    next_near_queue[pos] = v;
-                } else {
-                    // Heavy edge -> Add to next Far frontier
-                    int pos = atomicAdd(next_far_count, 1);
-                    next_far_queue[pos] = v;
+                if (new_dist < dist[v]) {
+                    // Attempt to update distance
+                    float old_dist = atomicMinFloat(&dist[v], new_dist);
+                    
+                    // If WE were the ones to lower the distance (or it was lowered)
+                    if (new_dist < old_dist) {
+                        
+                        // Decide which bucket (Near vs Far)
+                        if (w <= delta) {
+                            // DEDUPLICATION:
+                            // Try to set the flag for 'v' in the map.
+                            // atomicExch returns the OLD value.
+                            // If old value was 0, it means we are the FIRST thread to add 'v' this round.
+                            // If old value was 1, 'v' is already scheduled to be added, so we skip adding.
+                            if (atomicExch(&in_next_near_map[v], 1) == 0) {
+                                int pos = atomicAdd(next_near_count, 1);
+                                next_near_queue[pos] = v;
+                            }
+                        } else {
+                            if (atomicExch(&in_next_far_map[v], 1) == 0) {
+                                int pos = atomicAdd(next_far_count, 1);
+                                next_far_queue[pos] = v;
+                            }
+                        }
+                    }
                 }
             }
         }
-    }
-}
-
-/**
- * @brief Helper function to check for CUDA errors.
- * @param err The CUDA error code.
- * @param msg The message to display on error.
- */
-static void check_cuda(cudaError_t err, const char* msg) {
-    if (err != cudaSuccess) {
-        std::string m = std::string(msg) + ": " + cudaGetErrorString(err);
-        throw std::runtime_error(m);
     }
 }
 
@@ -129,117 +154,99 @@ std::vector<Graph::weight_t> delta_stepping_sssp(const Graph& graph, Graph::inde
 
     auto total_start = clock::now();
 
-    int n = graph.num_vertices();
-    int m = graph.num_edges();
-
     // 1. Setup Device Graph
     Graph::DeviceGraph d_graph = graph.copy_to_device();
-    
+    int n = graph.num_vertices();
+
+    // 2. Allocate Memory
     float* d_dist;
-    check_cuda(cudaMalloc(&d_dist, n * sizeof(float)), "Alloc dist");
+    check_cuda(cudaMalloc(&d_dist, n * sizeof(float)), "Malloc Dist");
 
-    // 2. Queue Management
-    // We need 3 queues: 
-    // Q_curr (current processing), Q_next_near (light edges output), Q_far (heavy edges output)
-    // To handle the "far" queue becoming "curr", we effectively act as a ring buffer or swap pointers.
-    
-    int *d_q1, *d_q2, *d_q_far; 
-    check_cuda(cudaMalloc(&d_q1, n * sizeof(int) * 2), "Alloc Q1"); // Make queues slightly larger or exactly N. 
-    // *Note*: In worst case with duplicates, queue could exceed N. 
-    // Ideally we implement duplicate removal, but for simplicity/speed here, we allocate generous buffers.
-    // For very large graphs, we would need a `bool visited` array reset every iter to enforce uniqueness.
-    // Here we assume N * 2 is safe enough for basic benchmarking or check bounds in kernel.
-    
-    // For safety in this implementation, let's just alloc N. 
-    // High-performance implementations use deduplication bitmasks.
-    check_cuda(cudaMalloc(&d_q2, n * sizeof(int) * 2), "Alloc Q2");
-    check_cuda(cudaMalloc(&d_q_far, n * sizeof(int) * 2), "Alloc QFar");
+    int *d_curr, *d_next_near, *d_next_far;
+    check_cuda(cudaMalloc(&d_curr, n * sizeof(int)), "Malloc Curr");
+    check_cuda(cudaMalloc(&d_next_near, n * sizeof(int)), "Malloc Near");
+    check_cuda(cudaMalloc(&d_next_far, n * sizeof(int)), "Malloc Far");
 
-    // Counters (managed on device to avoid PCIe latency)
+    // Deduplication Maps (Init to 0)
+    int *d_in_near_map, *d_in_far_map;
+    check_cuda(cudaMalloc(&d_in_near_map, n * sizeof(int)), "Malloc Near Map");
+    check_cuda(cudaMalloc(&d_in_far_map, n * sizeof(int)), "Malloc Far Map");
+    check_cuda(cudaMemset(d_in_near_map, 0, n * sizeof(int)), "Init Near Map");
+    check_cuda(cudaMemset(d_in_far_map, 0, n * sizeof(int)), "Init Far Map");
+
+    // Counters: [0]=curr_size, [1]=near_size, [2]=far_size
     int* d_counters; 
-    // [0]: q_curr_size, [1]: q_next_near_size, [2]: q_far_size
-    check_cuda(cudaMalloc(&d_counters, 3 * sizeof(int)), "Alloc counters");
-    check_cuda(cudaMemset(d_counters, 0, 3 * sizeof(int)), "Zero counters");
+    check_cuda(cudaMalloc(&d_counters, 3 * sizeof(int)), "Malloc Counters");
+    check_cuda(cudaMemset(d_counters, 0, 3 * sizeof(int)), "Zero Counters");
 
-    // Initialize Distances
-    int grid_init = (n + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    init_buffers<<<grid_init, BLOCK_SIZE>>>(d_dist, n, source);
-    check_cuda(cudaDeviceSynchronize(), "Init buffers");
+    // 3. Initialization
+    int blocks = (n + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    init_buffers<<<blocks, BLOCK_SIZE>>>(d_dist, n, source);
+    check_cuda(cudaDeviceSynchronize(), "Init Buffers");
 
-    // Initialize Frontier with Source
-    int h_one = 1;
-    check_cuda(cudaMemcpy(d_q1, &source, sizeof(int), cudaMemcpyHostToDevice), "Init Source");
-    check_cuda(cudaMemcpy(&d_counters[0], &h_one, sizeof(int), cudaMemcpyHostToDevice), "Init Counter");
-
-    // Pointers to simplify swapping
-    int* d_curr = d_q1;
-    int* d_next = d_q2;
-    // d_q_far stays constant until we flush it
+    // Add source to current queue
+    check_cuda(cudaMemcpy(d_curr, &source, sizeof(int), cudaMemcpyHostToDevice), "Copy Source");
+    int h_curr_size = 1;
+    check_cuda(cudaMemcpy(&d_counters[0], &h_curr_size, sizeof(int), cudaMemcpyHostToDevice), "Set Source Size");
 
     auto compute_start = clock::now();
 
-    int h_curr_size = 1;
+    int h_near_size = 0;
     int h_far_size = 0;
 
-    // --- Main Loop ---
-    // Runs while there is work in Current (Near) queue OR Far queue
+    // 4. Main Loop
     while (h_curr_size > 0 || h_far_size > 0) {
         
-        // 1. Inner Loop: Process Near Queue until empty (Convergence of light edges)
+        // --- Inner Loop: Light Edges (Delta) ---
         while (h_curr_size > 0) {
             int grid_size = (h_curr_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
             
-            // Launch Relax
-            // Input: d_curr (size counters[0])
-            // Output Light: d_next (size counters[1])
-            // Output Heavy: d_q_far (size counters[2])
             relax_kernel<<<grid_size, BLOCK_SIZE>>>(
-                d_graph, 
-                d_dist, 
-                d_curr, 
-                h_curr_size, 
-                delta, 
-                d_next, 
-                &d_counters[1], // next_near_count
-                d_q_far, 
-                &d_counters[2]  // next_far_count
+                d_graph, d_dist, 
+                d_curr, h_curr_size, delta, 
+                d_next_near, &d_counters[1], 
+                d_next_far, &d_counters[2],
+                d_in_near_map, d_in_far_map
             );
-            check_cuda(cudaGetLastError(), "Relax Kernel Launch");
+            check_cuda(cudaGetLastError(), "Relax Kernel");
 
-            // We must wait for this to finish to know the new size
-            // (In highly optimized code, we might use device-side launch or persistent kernels)
-            // But checking a single int from device is much faster than copying the whole array.
-            check_cuda(cudaMemcpy(&h_curr_size, &d_counters[1], sizeof(int), cudaMemcpyDeviceToHost), "Read Near Size");
+            // Read counters
+            int h_counters[3];
+            check_cuda(cudaMemcpy(h_counters, d_counters, 3 * sizeof(int), cudaMemcpyDeviceToHost), "Read Counters");
+            h_near_size = h_counters[1];
+            h_far_size = h_counters[2];
+
+            // Move Next Near -> Curr
+            int* temp = d_curr;
+            d_curr = d_next_near;
+            d_next_near = temp;
+
+            h_curr_size = h_near_size;
+
+            // Reset Near Counter
+            check_cuda(cudaMemset(&d_counters[1], 0, sizeof(int)), "Reset Near Counter");
             
-            // Swap Near Queues
-            std::swap(d_curr, d_next);
-            
-            // Reset "next" counter for the upcoming iteration (which is now old `d_curr` buffer)
-            check_cuda(cudaMemset(&d_counters[1], 0, sizeof(int)), "Reset Next Counter");
-            
-            // Update input size for next iter
-            // (h_curr_size is already set from the memcpy above)
-            
-            // IMPORTANT: Update counter[0] to reflect the swap for the kernel's next read?
-            // Actually, we pass h_curr_size by value to kernel. We only need to reset the atomic counter for the *output*.
-            // The input array `d_curr` is just a pointer.
+            // CRITICAL: We just processed 'Near', so the 'Near Map' is now stale (those nodes are in Curr).
+            // We clear it so they can be added again if needed.
+            check_cuda(cudaMemset(d_in_near_map, 0, n * sizeof(int)), "Reset Near Map");
         }
 
-        // 2. Inner Loop Done: Move Far Queue to Near Queue
+        // --- Outer Loop: Heavy Edges ---
+        // Refetch Far Size
         check_cuda(cudaMemcpy(&h_far_size, &d_counters[2], sizeof(int), cudaMemcpyDeviceToHost), "Read Far Size");
         
         if (h_far_size > 0) {
-            // Swap d_q_far into d_curr
-            // To avoid losing the pointer to the buffer, we swap pointers
+            // Move Far -> Curr
             int* temp = d_curr;
-            d_curr = d_q_far;
-            d_q_far = temp;
+            d_curr = d_next_far;
+            d_next_far = temp;
             
             h_curr_size = h_far_size;
-            h_far_size = 0; // We moved it all
+            h_far_size = 0;
             
-            // Reset Far Counter
+            // Reset Far Counter & Map
             check_cuda(cudaMemset(&d_counters[2], 0, sizeof(int)), "Reset Far Counter");
+            check_cuda(cudaMemset(d_in_far_map, 0, n * sizeof(int)), "Reset Far Map");
         }
     }
 
@@ -250,7 +257,16 @@ std::vector<Graph::weight_t> delta_stepping_sssp(const Graph& graph, Graph::inde
     std::vector<float> h_dist(n);
     check_cuda(cudaMemcpy(h_dist.data(), d_dist, n * sizeof(float), cudaMemcpyDeviceToHost), "Copy Result");
 
-    // Timing calculations
+    // Cleanup
+    cudaFree(d_dist);
+    cudaFree(d_curr);
+    cudaFree(d_next_near);
+    cudaFree(d_next_far);
+    cudaFree(d_counters);
+    cudaFree(d_in_near_map);
+    cudaFree(d_in_far_map);
+    Graph::free_device_graph(d_graph);
+
     if (gpu_compute_time_seconds) {
         *gpu_compute_time_seconds = seconds(compute_end - compute_start).count();
     }
@@ -260,14 +276,6 @@ std::vector<Graph::weight_t> delta_stepping_sssp(const Graph& graph, Graph::inde
         double compute = seconds(compute_end - compute_start).count();
         *gpu_init_time_seconds = total - compute;
     }
-
-    // Cleanup
-    cudaFree(d_dist);
-    cudaFree(d_q1);
-    cudaFree(d_q2);
-    cudaFree(d_q_far);
-    cudaFree(d_counters);
-    Graph::free_device_graph(d_graph);
 
     return h_dist;
 }

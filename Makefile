@@ -53,7 +53,7 @@ $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
 # Run the program
-FILE ?= data/small/rome99.gr
+FILE ?= data/medium/USA-road-d.NY.gr
 METHOD ?= 0
 SOURCE ?= 0
 TIMED ?= 0
