@@ -112,6 +112,10 @@ int main(int argc, char** argv) {
         }
 
         for (Graph::index_t v = 0; v < graph.num_vertices(); ++v) {
+            if (distances[static_cast<std::size_t>(v)] == 1e30f) {
+                std::cout << v << " inf\n";
+                continue;
+            }
             std::cout << v << " " << distances[static_cast<std::size_t>(v)] << "\n";
         }
     }
