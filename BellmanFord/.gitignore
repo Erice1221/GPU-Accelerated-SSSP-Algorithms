@@ -1,4 +1,7 @@
-graphs/*.txt
+graphs
 parallel
 sequential
 test_results.txt
+input_graphs/*.txt
+input_graphs/*.png
+input_graps/plot_results.py

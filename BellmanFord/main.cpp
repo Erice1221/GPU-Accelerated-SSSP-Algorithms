@@ -12,15 +12,17 @@ struct Edge {
     int u, v;
     int w;
 };
-double cudaBellmanFord(Edge* edges, int* distances, int n, int m);
+double cudaBellmanFordEdge(Edge* edges, int* distances, int n, int m);
+double cudaBellmanFordFrontier(Edge* edges, int* distances, int n, int m, int source);
 
 int main(int argc, char** argv)
 {
     std::string input_filename;
     bool verbose = true;
+    char parallel_mode = '\0';
     // Read command line arguments
     int opt;
-    while ((opt = getopt(argc, argv, "f:v")) != -1) {
+    while ((opt = getopt(argc, argv, "f:v:m:")) != -1) {
         switch (opt) {
         case 'f':
             input_filename = optarg;
@@ -28,10 +30,17 @@ int main(int argc, char** argv)
         case 'v':
             verbose = false;
             break;
+        case 'm':
+            parallel_mode = *optarg;
+            break;
         }
     }
     if (empty(input_filename) ) {
         std::cout << "Error with filename" << '\n';
+        exit(EXIT_FAILURE);
+    }
+    if (parallel_mode != 'E' && parallel_mode != 'F') {
+        std::cout << "Include Parallel mode -m E or -m F" << '\n';
         exit(EXIT_FAILURE);
     }
     
@@ -62,9 +71,12 @@ int main(int argc, char** argv)
     
 
     double cudaTime = 50000.;
-
-
-    cudaTime = std::min(cudaTime, cudaBellmanFord(edges, distances, n, m));
+    if (parallel_mode == 'E') {
+        cudaTime = std::min(cudaTime, cudaBellmanFordEdge(edges, distances, n, m));
+    }
+    if (parallel_mode == 'F') {
+        cudaTime = std::min(cudaTime, cudaBellmanFordFrontier(edges, distances, n, m, source));
+    }
     printf("GPU_time: %f s\n", cudaTime);
     if (verbose) {
         printf("v,distance\n");

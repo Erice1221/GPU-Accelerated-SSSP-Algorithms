@@ -54,7 +54,7 @@ __global__ void resetFlag(int* flag) {
 
 
 
-double cudaBellmanFord(Edge* edges, int* distances,int n, int m)
+double cudaBellmanFordEdge(Edge* edges, int* distances,int n, int m)
 {
     Edge* cEdges;
     int *cDistances;

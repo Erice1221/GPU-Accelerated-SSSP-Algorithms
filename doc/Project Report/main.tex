@@ -1,0 +1,60 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage{amsmath}
+\title{15418 Project Bellman Ford}
+\author{Eric Esrubilsky}
+\date{December 2025}
+
+\begin{document}
+
+\newpage
+\section{Summary}
+We implemented and evaluated 3 Bellman Ford SSSP implementations including a sequential baseline, an edge parallel CUDA version, and a frontier parallel CUDA version, and then compared the performance on a CPU and a NVIDIA RTX 2080. \\\\\\\\
+\section{Background}
+Bellman Ford is an algorithm that solves the single source shortest path (SSSP) problem on a directed, weighted graph (i.e $G=(V,E)$) by repeatedly relaxing its edges. Essentially, for each edge $(u,v,w)$, the algorithm updates the distance to vertices according to:
+\begin{align*}
+dist[v]=min(dist[v],dist[u]+w).
+\end{align*}
+The algorithm represents the graph as a set of edges and keeps track of the distances (all initially infinity except for the source). The costly part of the algorithm is the nested loop that has to scan all edges and do up to $|V|-1$ iterations, which gives a worst case time complexity of $O(|V| \cdot |E|)$.\\\\
+In each iteration, all edge relaxations are independent of each other, except for potentially having competing updates to the same vertex. This clearly has the potential for significant parallelism, where all edges can be processed in parallel if distance updates can be deemed atomic. In addition, locality is good when edges are stored in a contiguous pattern, meaning scanning them is great for SIMD execution on a GPU. Synchronization is another factor since there can be dependencies between iterations where later relaxations might need updated distances and at each vertex we can have multiple edges updating the same $dist[v]$.
+\newpage
+\section{Approach}
+The sequential baseline implementation is written in C++ and is a more traditional textbook implementation. It does up to $n-1$ iterations over the edge list with a flag to exit early if an iteration doesn't change anything. In addition, all input graphs are read in the format (txt files): 
+\begin{align*}
+&n \; \; \; m \; \; \; source\\
+&u \; \; \; v\; \; \; w\\
+&...
+\end{align*}
+Where $n$ is the number of vertices, $m$ is the number of edges, $source$ is the source vertex.\\ 
+For the GPU implementations, CUDA/C++ and a NVIDIA RTX 2080 were used. The first algorithm that was implemented for Bellman Ford was the edge parallel implementation. Here, the the general structure mimics the idea of the sequential version but it parallelizes the inner edge loop. Essentially, the graph is copied to the device memory as an array, and each thread processes multiple consecutive edges, where the number of edges per thread is dynamically tuned based on the graph size. Then, each thread computes a potential distance and uses $atomicMin$ on the global distance array. Finally, a per block shared flag is used to reduce contention where one thread per block writes to the global flag if any updates happen in the block. This allows for after each kernel launch, the host to be able to read a global flag and exit early if we have no changes. Initially, an attempt was made to give each thread some fixed number of edges and then compute the indices manually, but this caused bad work distribution and more non contiguous memory accesses as the number of edges changed. The dynamic version improved memory coalescing and reduced kernel launch overhead for smaller graphs. \\\\
+
+For the Bellman Ford frontier parallel implementation it essentially first converts the edge list into a CSR style structure by sorting edges by source vertex and computing row pointers (prefix sum), using 2 frontier arrays on the device side. For each iteration, one thread is launched per frontier edge to get better load balancing when vertices have different out degrees. A binary search is then used within each thread to get the frontier vertex for the respective edge index. In each iteration we also have to compute a prefix sum over vertex degrees to find edge offsets for the binary search. The kernels add to the current frontier by relaxing outgoing edges and then building the next frontier using the vertices who saw a reduction in distance. Due to this implementation, there can be a reduction in the work required only when a small subset of vertices are active, but there is also the additional overhead from using the frontiers and extra kernel launches. Important to note that the prefix sum is computed on the CPU, which adds some host device synchronization overhead.\\\\
+Additionally, a Python script was used to generate different kinds of input graphs that all vary in density, size, structure, and style. Also, a checker script was made to run the graphs on the implementations, verify that the results match between the different implementations, and compute performance metrics.\\\\\\
+\section{Results}
+Performance for the Bellman Ford implementations was measured using wall clock time for the computation runtime of each one. Its important to note that since performance was the main criteria for evaluating the implementations only graphs with positive weight edges were used, allowing the implementations not to check for negative cycles. The main metric is speedup ($\frac{T_{CPU}}{T_{GPU}}$). Then for the input graphs 3 different styles of synthetic graphs were generated and used:
+\begin{itemize}
+    \item \textbf{Density scaling} with 10K vertices and 20K, 100K, 500K, and 1M edges.
+    \item \textbf{Size scaling} with 1K, 5K, 10K, 50K, 100K, and 500K vertices with 10 edges per vertex.
+    \item \textbf{Structure} having 50K vertex graphs that have random, clustered, grid, chain, road like (sparse), and star structures.
+\end{itemize}
+For each input graph, the checker script confirmed that all the implementations gave identical distances/results.
+\subsection{Effect of Edge density (10K vertices)}
+\includegraphics[width=0.9\linewidth]{plot1_density_speedup.png}\\
+With the number of vertices fixed at 10K, and with an edge count of 20K, meaning 2 edges per vertex and increasing the edges to 1M, meaning 100 edges per vertex significantly improved GPU speedup. The edge parallel version goes from 1.1x speedup on the sparse graph to 4x, 6.6x, and 7.5x as the density of the graph grows. For the frontier implementation speedup went from 0.6x to 2.4x, 5.9x, and 7.6x. Implementation wise, having sparse graphs causes little parallel work per iteration while still having the kernel launch and synchronization overhead. Additionally, frontier management overhead plays a significant factor when the frontier is nearly the whole graph. In general, as the density increases each kernel has to process a lot more edges (creating more work for threads), and allowing the parallel implementations to outperform the sequential version.
+\newpage
+\subsection{Effect of Graph size (10 edges per vertex)}
+\includegraphics[width=0.9\linewidth]{plot2_scale_speedup.png}\\
+\includegraphics[width=0.9\linewidth]{plot6_execution_time.png}\\
+With a fixed 10 edges per vertex, scaling from 1K to 500K vertices shows the expected realistic outcome where small graphs dont perform well for parallel performance but large graphs do. At 1K vertices, the edge speedup was 0.33x and the frontier speedup was 0.17x (much slower than the sequential). This makes sense though because the work per iteration is so small, there is no meaningful parallel benefit due to overheads. At 10K vertices, both parallel implementations are faster than the sequential version. At 100k, edge parallel gets to 21x speedup and frontier gets 15x. Then at 500k speedup goes to 46x and 27x respectively. The plot of the execution time (log scale), shows the sequential grows somewhat linear with the number of vertices. The GPU implementations increase slower which is a sign that as the graph size gets bigger, the computation dominates all of the overheads (parallelism is being fully utilized).     
+\newpage
+\subsection{Effect of graph structure (50k vertices)}
+\includegraphics[width=0.7\linewidth]{plot3_structure_time.png}\\
+\includegraphics[width=0.7\linewidth]{plot4_structure_speedup.png}\\
+With 50K vertex graphs using different structures, the performance is highly dependent on the amount of parallel work per iteration. The random graph (with 500k edges), the edge parallel version gets around 13x speedup and frontier 8.3x. For the clustered graph, speedups are approximately 8.5x and 4.9x. These types of graphs have similar properties where they have many edges and small diameters. Meaning, the shortest path distances can be found in few iterations, where each iteration has large frontiers. In both parallel implementations, the GPU has enough work to get meaningful performance, but the edge version especially outperformed the frontier version. For the grid structure graphs (2D grid), speedups drop significantly, the edge parallel has a speedup of 1.4x and the frontier has 0.73x speedup. The grid structure has low degree and in general longer shortest paths, meaning more iterations with less edges in each iterations. This results in the overhead dominating where the frontier does not get smaller in proportion to this. In an additional extreme case, with a chain (successive edges) shows the limits of GPU parallelism where the sequential version finishes in approx 0.1 ms using in place relaxations and early exit. Both GPU versions are much slower because they still launch full kernel going over all edges and additionally have overheads from kernel launch and synchronization  with almost no meaningful parallelism.
+\newpage
+\subsection{General Comparison}
+\includegraphics[width=1\linewidth]{plot5_overall_comparison.png}\\
+In general, the edge parallel implementation of Bellman Ford generally beats the frontier parallel implementation in terms of performance with these synthetic graphs. The maximum speedups found were 46x for edge parallel and 27x for frontier parallel over the sequential baseline version. The frontier parallelism implementation struggles to outperform the edge one due to the fact that on these generated graphs, frontiers end up including most vertices. This leads the algorithm to do almost as much work as the edge version while dealing with the additional overhead from having frontiers and extra kernels.\\\\
+The main limiting factors of the Bellman Ford approaches is first having long diameters that result in many global iterations. Second, small graphs where things like kernel launches and synchronization dominate. Third, atomic contention from high degree vertices, which can be seen in dense graphs (amortized by fully utilized parallelism).\\\\
+from these results, its clear that the GPU is great for Bellman Ford when used on large, relatively dense graphs. The parallel versions gives meaningful speedups when the graphs are large enough, while the sequential version outperforms for tiny structured graphs where the algorithm finds the shortest path in few easy passes.  
+\end{document}
