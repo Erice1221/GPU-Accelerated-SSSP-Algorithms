@@ -1,6 +1,6 @@
 import random
 
-random.seed(42)  # reproducible results
+random.seed(42) 
 
 def write_graph(filename, n, edges):
     """Write graph in format n m source, then u v w for each edge"""
@@ -99,7 +99,6 @@ def make_grid_graph(side):
 
 
 # density scaling (fixed 10K vertices)
-print("\n=== Category 1: Density Scaling (10K vertices) ===")
 
 density_configs = [
     ("density_sparse_10000", 10000, 20000),      # 2 edges/vertex
@@ -114,7 +113,6 @@ for name, n, m in density_configs:
 
 
 # size scaling (fixed 10 edges/vertex ratio)
-print("\n=== Category 2: Size Scaling (10 edges/vertex) ===")
 
 scale_configs = [
     ("scale_1000", 1000, 10000),
@@ -131,7 +129,6 @@ for name, n, m in scale_configs:
 
 
 #  different structure types (50K vertices)
-print("\n=== Category 3: Structure Types (50K vertices) ===")
 
 # random
 edges = make_random_graph(50000, 500000)
@@ -156,21 +153,8 @@ write_graph("structure_grid_50176.txt", n, edges)
 
 
 #  real world graphs
-print("\n=== Category 4: Real-World Simulation ===")
-
-# road network (sparse, grid-like)
+# road network (sparse, grid like)
 edges = make_random_graph(100000, 300000)
 write_graph("realworld_road_100000.txt", 100000, edges)
 
 
-
-# =============================================================================
-# SUMMARY
-# =============================================================================
-print("\n=== Summary ===")
-print("Category 1 (Density): 4 graphs - vary edge count, fixed vertices")
-print("Category 2 (Scale): 6 graphs - vary both, fixed ratio")
-print("Category 3 (Structure): 5 graphs - different topologies")
-print("Category 4 (Real-world): 3 graphs - practical simulations")
-print("Total: 18 graphs")
-print("\nRun benchmarks with: ./checker.sh")
