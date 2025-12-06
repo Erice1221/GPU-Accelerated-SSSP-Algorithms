@@ -14,7 +14,7 @@ NVCC ?= nvcc
 
 # Flags
 CXXFLAGS := -O3 -std=c++11 -I $(SRCDIR)
-NVCCFLAGS := -O3 -std=c++11 -I $(SRCDIR)
+NVCCFLAGS := -O3 -std=c++11 -I $(SRCDIR) -ccbin g++-11
 
 # Source files
 CPP_SRCS := $(SRCDIR)/sssp.cpp \
