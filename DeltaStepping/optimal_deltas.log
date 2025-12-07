@@ -1,0 +1,23 @@
+File Path,Optimal Delta,Time (s)
+data/medium/USA-road-d.FLA.gr,500000.0,1.21216
+data/medium/USA-road-d.NY.gr,1.0,0.04383
+data/medium/soc-Epinions1.txt,50000.0,0.00196
+data/medium/soc-Slashdot0902.txt,2000.0,0.00249
+data/small/rome99.gr,2.0,0.00202
+data/small/wiki-Vote.txt,1000.0,0.00129
+data/test/density_dense_10000.txt,50000.0,0.00187
+data/test/density_medium_10000.txt,5000.0,0.00114
+data/test/density_sparse_10000.txt,500.0,0.00088
+data/test/density_very_dense_10000.txt,5000.0,0.00237
+data/test/realworld_road_100000.txt,20000.0,0.00171
+data/test/scale_1000.txt,200.0,0.00102
+data/test/scale_10000.txt,20000.0,0.00120
+data/test/scale_100000.txt,500.0,0.00340
+data/test/scale_5000.txt,200.0,0.00103
+data/test/scale_50000.txt,500.0,0.00220
+data/test/scale_500000.txt,20.0,0.01929
+data/test/structure_chain_50000.txt,10.0,0.20470
+data/test/structure_cluster_50000.txt,500.0,0.00210
+data/test/structure_grid_50176.txt,2000.0,0.00668
+data/test/structure_random_50000.txt,200.0,0.00203
+data/test/structure_star_50000.txt,2.0,0.06372
