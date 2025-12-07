@@ -1,4 +1,4 @@
-File Path,Delta Value,CPU Initialization Time,Dijkstra Computation Time,GPU Initialization Time,GPU Additional Initialization Time,GPU Computation Time
+File_Path,Delta_Value,CPU_Initialization_Time,Dijkstra_Computation_Time,GPU_Initialization_Time,GPU_Additional_Initialization_Time,GPU_Computation_Time
 data/medium/USA-road-d.FLA.gr,200000.0,0.971569,0.0812741,0.974398,0.0821057,0.6462
 data/medium/USA-road-d.NY.gr,100000.0,0.261029,0.020842,0.26624,0.0652108,0.02572
 data/medium/soc-Epinions1.txt,100.0,0.138041,0.00323793,0.135755,0.0681642,0.00115632
